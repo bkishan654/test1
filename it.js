@@ -1,4 +1,4 @@
-import React, { useEffect, useState ,useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import 'ag-grid-community/dist/styles/ag-grid.css'; // Core grid CSS, always needed
 import 'ag-grid-community/dist/styles/ag-theme-alpine.css'; // Optional theme CSS
@@ -6,11 +6,11 @@ import productAttributeTasks from '../../../services/api/tasks/productAttributeT
 import { encryptText, decryptText } from '../../../services/aes';
 import ProductNameRenderer from './ProductNameRenderer';
 import BootstrapSwitchButton from 'bootstrap-switch-button-react';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { checkRoles, sortuserrole } from '../../../services/agsRoles';
 import { rolesInfo } from '../../../services/graphapi/roles';
 import ModalEdit from '../../../components/BulkEdit/ModalEdit';
-import temp from '../../assets/templates/Kit.json'
+import temp from '../../assets/templates/Kit.json';
 
 const isSystemAdmin = checkRoles(
   'SPARK Product Management System Admin',
@@ -22,58 +22,6 @@ const roleRank = sortuserrole(rolesInfo.roles);
 const username = process.env.REACT_APP_API_USERNAME;
 const password = decryptText(process.env.REACT_APP_API_PASSWORD);
 
-//to render row data
-// const fetchTemplate = async (templateName) => {
-//   try {
-//     const response = await fetch(`/assets/templates/${templateName}.json?cache-bust=${new Date().getTime()}`, {
-//       cache: "no-store"
-//     });
-//     if (!response.ok) {
-//       throw new Error(`HTTP error! status: ${response.status}`);
-//     }
-//     const contentType = response.headers.get("content-type");
-//     if (!contentType || !contentType.includes("application/json")) {
-//       const text = await response.text(); // Read the response as text
-//       console.error("Received non-JSON response:", text); // Log the response content
-//       throw new TypeError("Received non-JSON response");
-//     }
-//     const template = await response.json();
-//     return template;
-//   } catch (error) {
-//     console.error('Error fetching data:', error);
-//     return null;
-//   }
-// };
-
-// const extractAttributes = (template) => {
-//   const attributes = [];
-//   const traverse = (obj) => {
-//     for (const key in obj) {
-//       if (obj[key].properties) {
-//         traverse(obj[key].properties);
-//       } else if (key !== 'Speed Attribute') {
-//         attributes.push(key);
-//       }
-//     }
-//   };
-//   traverse(template.properties);
-//   return attributes;
-// };
-
-// const generateRows = async (productData, templateName) => {
-//   const template = await fetchTemplate(templateName);
-//   const attributes = extractAttributes(template);
-
-//   const rows = Array.from(attributes).map((attr) => {
-//     const row = { attribute: attr };
-//     productData.forEach((product, index) => {
-//       row[`product${index + 1}`] = product[attr] || '';
-//     });
-//     return row;
-//   });
-//   console.log("rows ",rows)
-//   return rows;
-// };
 const BulkEditGrid = ({ test }) => {
   const gridRef = useRef();
   const [compareList, setCompareList] = useState(() => {
@@ -83,6 +31,8 @@ const BulkEditGrid = ({ test }) => {
   const [rowData, setRowData] = useState([]);
   const [columnDefs, setColumnDefs] = useState([]);
   const [bulkEditEnabled, setbulkEditEnabled] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedCell, setSelectedCell] = useState({});
   const defaultColDef = useMemo(() => ({
     sortable: false,
     wrapText: true,
@@ -111,14 +61,13 @@ const BulkEditGrid = ({ test }) => {
           return productAttributes;
         });
 
-
-        const productType={}
-        productData.map((response)=>{
-            let product,type;
-            product=response["MM Number"]
-            type=response["Type"]
-            productType[product]=type
-        })
+        const productType = {};
+        productData.map((response) => {
+          let product, type;
+          product = response['MM Number'];
+          type = response['Type'];
+          productType[product] = type;
+        });
 
         const rows = Array.from(attributes).map((attr) => {
           const row = { attribute: attr };
@@ -129,25 +78,7 @@ const BulkEditGrid = ({ test }) => {
           return row;
         });
 
-        // const rows=[]
-        // for(let key in productType)
-        // {
-        //   let data=productData.find(product=>product["MM Number"]===key)
-        //   let row=generateRows(data,productType[key])
-        //   rows.push(row)
-        // }
-
         setRowData(rows);
-        // debugger;
-        // const rows = [];
-        // for (let key in productType) {
-        //   let data = productData.find(product => product["MM Number"] === key);
-        //   if (data) {
-        //     const row = await generateRows([data], productType[key]);
-        //     rows.push(...row);
-        //   }
-        // }
-        // setRowData(rows);
 
         const ProductRow = rows.find((row) => row.attribute === 'Product Name');
         const ProductHeaders = [];
@@ -158,7 +89,7 @@ const BulkEditGrid = ({ test }) => {
             }
           }
           console.log(ProductHeaders);
-          console.log("testing ",productType)
+          console.log('testing ', productType);
         }
 
         const columns = [
@@ -173,7 +104,6 @@ const BulkEditGrid = ({ test }) => {
               productId: `${
                 product['MM Number'] ? product['MM Number'] : 'notSetYet'
               }`,
-            
             },
             editable: true,
           })),
@@ -187,6 +117,37 @@ const BulkEditGrid = ({ test }) => {
 
     fetchData();
   }, [compareList, test]);
+
+  const handleCellClick = (params) => {
+    setSelectedCell({
+      rowIndex: params.rowIndex,
+      colId: params.colDef.field,
+      value: params.value,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleSave = async (newValue) => {
+    const updatedRowData = [...rowData];
+    updatedRowData[selectedCell.rowIndex][selectedCell.colId] = newValue;
+    setRowData(updatedRowData);
+    setIsModalOpen(false);
+
+    // Make API call to save the changes
+    try {
+      await productAttributeTasks.updateProductAttribute(
+        updatedRowData[selectedCell.rowIndex]['MM Number'],
+        selectedCell.colId,
+        newValue,
+        username,
+        password
+      );
+      toast.success('Attribute updated successfully.');
+    } catch (error) {
+      console.error('Error updating attribute:', error);
+      toast.error('Failed to update attribute.');
+    }
+  };
 
   return (
     <>
@@ -245,27 +206,24 @@ const BulkEditGrid = ({ test }) => {
           headerwidth={300}
           alwaysShowVerticalScroll={true}
           ref={gridRef} // Ref for accessing Grid's API
-          // colResizeDefault={columnData.colResizeDefault}
-          // getRowHeight={getRowHeight}
-          // suppressDragLeaveHidesColumns={true}
-          // suppressFieldDotNotation={true}
-
-          // defaultColDef={defaultColDef} // Default Column Properties
-          // animateRows={true} // Optional - set to 'true' to have rows animate when sorted
           debounceVerticalScrollbar={true}
           enableCellTextSelection="true"
-          // onCellClicked={cellClickedListener} // Optional - registering for Grid Event
-          // onGridReady={onGridReadyTasks}
-          // rowClassRules={rowClassRules}
+          onCellClicked={handleCellClick} // Handle cell click
           overlayNoRowsTemplate={'Loading the Product data'}
-          // suppressColumnVirtualisation={true}
-          // pinnedTopRowData={PinnedTopRowData}
-          // getRowStyle={getRowStyle}
           enableColResize={true}
           allowResizing={true}
           suppressAutoSize={true}
         />
       </div>
+
+      {isModalOpen && (
+        <ModalEdit
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSave={handleSave}
+          initialValue={selectedCell.value}
+        />
+      )}
     </>
   );
 };
