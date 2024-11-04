@@ -3,7 +3,7 @@ import { AgGridReact } from 'ag-grid-react';
 import 'ag-grid-community/dist/styles/ag-grid.css'; // Core grid CSS, always needed
 import 'ag-grid-community/dist/styles/ag-theme-alpine.css'; // Optional theme CSS
 import productAttributeTasks from '../../../services/api/tasks/productAttributeTasks';
-import { encryptText, decryptText } from '../../../services/aes';
+import { decryptText } from '../../../services/aes';
 import ProductNameRenderer from './ProductNameRenderer';
 import BootstrapSwitchButton from 'bootstrap-switch-button-react';
 import toast from 'react-hot-toast';
@@ -11,36 +11,8 @@ import { checkRoles, sortuserrole } from '../../../services/agsRoles';
 import { rolesInfo } from '../../../services/graphapi/roles';
 import ModalEdit from '../../../components/BulkEdit/ModalEdit';
 import Modal from 'react-modal';
-import temp from '../../assets/templates/Kit.json';
-import removeChars from '../../../utils/removeSpecialChars';
-import {
-  cloneDeep,
-  forOwn,
-  isEmpty,
-  isObject,
-  isEqual,
-  set,
-  isNull,
-  size,
-  forEach,
-  find,
-  trim,
-  isUndefined,
-  pickBy,
-  isString,
-} from 'lodash';
 
-const isSystemAdmin = checkRoles(
-  'SPARK Product Management System Admin',
-  rolesInfo.roles
-);
-
-const roleRank = sortuserrole(rolesInfo.roles);
-
-const username = process.env.REACT_APP_API_USERNAME;
-const password = decryptText(process.env.REACT_APP_API_PASSWORD);
-
-const BulkEditGrid = ({ test }) => {
+const BulkEditGrid = () => {
   const gridRef = useRef();
   const [compareList, setCompareList] = useState(() => {
     const saved = window.localStorage.getItem('compareList');
@@ -48,106 +20,62 @@ const BulkEditGrid = ({ test }) => {
   });
   const [rowData, setRowData] = useState([]);
   const [columnDefs, setColumnDefs] = useState([]);
-  const [bulkEditEnabled, setbulkEditEnabled] = useState(false);
+  const [bulkEditEnabled, setBulkEditEnabled] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCell, setSelectedCell] = useState({});
-  const [currentClickEvent, setCurrentClickEvent] = useState(null);
-  // const [modalIsOpen, setIsOpen] = useState(false);
-  const [listForBulk, setListForBulk] = useState([]);
+  
+  const username = process.env.REACT_APP_API_USERNAME;
+  const password = decryptText(process.env.REACT_APP_API_PASSWORD);
+
   const defaultColDef = useMemo(() => ({
     sortable: false,
     wrapText: true,
     autoHeight: true,
-  }));
+  }), []);
 
-  function openModal() {
-    setIsModalOpen(true);
-  }
-  function afterOpenModal() {
-    // references are now sync'd and can be accessed.
-  }
-  function closeModal() {
+  const openModal = () => setIsModalOpen(true);
+  const closeModal = () => {
     setIsModalOpen(false);
-    setListForBulk([]);
-  }
-
-
-  const modalCustomStyles = {
-    content: {
-      top: '40%',
-      left: '50%',
-      right: 'auto',
-      bottom: 'auto',
-      marginRight: '-50%',
-      transform: 'translate(-50%, -50%)',
-    },
+    setSelectedCell({});
   };
+
   useEffect(() => {
     const fetchData = async () => {
+      if (compareList.length === 0) return;
+
       try {
         const responses = await Promise.all(
           compareList.map((item) =>
             productAttributeTasks.getProductAttributes(item, username, password)
           )
         );
-        let count = 0;
-        const attributes = new Set();
+
         const productData = responses.map((response) => {
           const productAttributes = {};
           response.rows.forEach((row) => {
-            const attributeName = row.qualification.name;
-            const attributeValue = row.values[2];
-            const colID = row.object.label;
-            productAttributes[attributeName] = attributeValue;
-            attributes.add(attributeName);
+            productAttributes[row.qualification.name] = row.values[2];
           });
           return productAttributes;
         });
 
-        const productType = {};
-        productData.map((response) => {
-          let product, type;
-          product = response['MM Number'];
-          type = response['Type'];
-          productType[product] = type;
-        });
+        const attributes = Array.from(new Set(productData.flatMap(Object.keys)));
 
-        const rows = Array.from(attributes).map((attr) => {
+        const rows = attributes.map((attr) => {
           const row = { attribute: attr };
           productData.forEach((product, index) => {
             row[`product${index + 1}`] = product[attr] || '';
-            count = index;
           });
           return row;
         });
 
         setRowData(rows);
 
-        const ProductRow = rows.find((row) => row.attribute === 'Product Name');
-        const ProductHeaders = [];
-        if (ProductRow) {
-          for (const key in ProductRow) {
-            if (key.startsWith('product')) {
-              ProductHeaders.push(ProductRow[key]);
-            }
-          }
-          console.log(ProductHeaders);
-          console.log('testing ', productType);
-        }
-
         const columns = [
-          { headerName: `${count + 1} products`, field: 'attribute' },
+          { headerName: 'Attributes', field: 'attribute', editable: false },
           ...productData.map((product, index) => ({
-            headerName: ProductHeaders[index]
-              ? `(${ProductHeaders[index]})`
-              : `Product ${index + 1}`,
+            headerName: `Product ${index + 1}`,
             field: `product${index + 1}`,
             headerComponent: ProductNameRenderer,
-            headerComponentParams: {
-              productId: `${
-                product['MM Number'] ? product['MM Number'] : 'notSetYet'
-              }`,
-            },
             editable: true,
           })),
         ];
@@ -155,11 +83,12 @@ const BulkEditGrid = ({ test }) => {
         setColumnDefs(columns);
       } catch (error) {
         console.error('Error fetching data:', error);
+        toast.error('Failed to load product attributes.');
       }
     };
 
     fetchData();
-  }, [compareList, test]);
+  }, [compareList]);
 
   const handleCellClick = (params) => {
     setSelectedCell({
@@ -167,16 +96,15 @@ const BulkEditGrid = ({ test }) => {
       colId: params.colDef.field,
       value: params.value,
     });
-    setIsModalOpen(true);
+    openModal();
   };
 
   const handleSave = async (newValue) => {
     const updatedRowData = [...rowData];
     updatedRowData[selectedCell.rowIndex][selectedCell.colId] = newValue;
     setRowData(updatedRowData);
-    setIsModalOpen(false);
+    closeModal();
 
-    // Make API call to save the changes
     try {
       await productAttributeTasks.updateProductAttribute(
         updatedRowData[selectedCell.rowIndex]['MM Number'],
@@ -194,97 +122,58 @@ const BulkEditGrid = ({ test }) => {
 
   return (
     <>
-      <div
-        className="col"
-        style={{
-          paddingBottom: '15px',
-          paddingLeft: '15px',
-          paddingRight: '15px',
-          paddingTop: '15px',
-        }}
-      >
-        {1 ? (
-          <BootstrapSwitchButton
-            checked={bulkEditEnabled}
-            onlabel="Enable Bulk Edit"
-            offlabel="Enable Bulk Edit"
-            width={160}
-            onstyle="primary"
-            offstyle="info"
-            onChange={(checked) => {
-              setbulkEditEnabled(checked);
-              if (checked) {
-                toast.success('Enabled bulk edit.', {
-                  position: 'top-right',
-                  minWidth: '500px',
-                });
-              }
-            }}
-            style="bulkEditButton"
-          />
-        ) : null}
-        {bulkEditEnabled ? (
-          <span className="enable-bulkEdit">
-            This page is in Bulk Edit mode
-          </span>
-        ) : (
-          <span className="enable-bulkEdit">
-            This page is not in Bulk Edit mode
-          </span>
-        )}
+      <div style={{ padding: '15px' }}>
+        <BootstrapSwitchButton
+          checked={bulkEditEnabled}
+          onlabel="Enable Bulk Edit"
+          offlabel="Disable Bulk Edit"
+          width={160}
+          onstyle="primary"
+          offstyle="info"
+          onChange={(checked) => {
+            setBulkEditEnabled(checked);
+            toast.success(checked ? 'Enabled bulk edit.' : 'Disabled bulk edit.');
+          }}
+        />
+        <span className="enable-bulkEdit">
+          This page is {bulkEditEnabled ? 'in' : 'not in'} Bulk Edit mode
+        </span>
       </div>
-      <div
-        className="ag-theme-alpine"
-        style={{
-          height: 'calc(100vh - 20px)',
-          width: 'calc(100% - 40px)',
-          margin: '20px',
-        }}
-      >
+
+      <div className="ag-theme-alpine" style={{ height: 'calc(100vh - 80px)', margin: '20px' }}>
         <AgGridReact
           rowData={rowData}
           columnDefs={columnDefs}
-          colResizeDefault={columnDefs.colResizeDefault}
-          headerHeight={120}
-          headerwidth={300}
-          alwaysShowVerticalScroll={true}
-          ref={gridRef} // Ref for accessing Grid's API
-          debounceVerticalScrollbar={true}
-          enableCellTextSelection="true"
-          onCellClicked={handleCellClick} // Handle cell click
-          overlayNoRowsTemplate={'Loading the Product data'}
-          enableColResize={true}
-          allowResizing={true}
-          suppressAutoSize={true}
+          defaultColDef={defaultColDef}
+          onCellClicked={handleCellClick}
+          overlayNoRowsTemplate={'Loading the Product data...'}
         />
       </div>
 
       <Modal
-              isOpen={isModalOpen}
-              onAfterOpen={afterOpenModal}
-              style={modalCustomStyles}
-              contentLabel="Example Modal"
-            >
-              {/* {bulkEditEnabled && (
-                <span className="editValues">
-                  This is in Bulk Edit mode. Any changes will be applied to all
-                  the products added in the compare page.
-                </span>
-              )} */}
-              <div>
-                <span style={{ fontWeight: 'bold' }}>
-                  {selectedCell.value||''}
-                </span>
-                <br></br>
-                <ModalEdit
-                  onCloseModal={closeModal}
-                  onSaveModal={handleSave}
-                  currentEvent={selectedCell}
-                  // templateJSON={template[templateType]}
-                  // onValueChange={modalValueChanged}
-                />
-              </div>
-            </Modal>
+        isOpen={isModalOpen}
+        onRequestClose={closeModal}
+        contentLabel="Edit Product Attribute"
+        style={{
+          content: {
+            top: '40%',
+            left: '50%',
+            right: 'auto',
+            bottom: 'auto',
+            marginRight: '-50%',
+            transform: 'translate(-50%, -50%)',
+          },
+        }}
+      >
+        <div>
+          <strong>{selectedCell.value}</strong>
+          <ModalEdit
+            onCloseModal={closeModal}
+            onSaveModal={handleSave}
+            currentEvent={selectedCell}
+          />
+        </div>
+      </Modal>
     </>
   );
 };
