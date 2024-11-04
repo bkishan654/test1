@@ -11,7 +11,7 @@ import { checkRoles, sortuserrole } from '../../../services/agsRoles';
 import { rolesInfo } from '../../../services/graphapi/roles';
 import ModalEdit from '../../../components/BulkEdit/ModalEdit';
 import temp from '../../assets/templates/Kit.json';
-
+//test
 const isSystemAdmin = checkRoles(
   'SPARK Product Management System Admin',
   rolesInfo.roles
