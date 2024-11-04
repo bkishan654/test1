@@ -52,7 +52,7 @@ const BulkEditGrid = ({ test }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCell, setSelectedCell] = useState({});
   const [currentClickEvent, setCurrentClickEvent] = useState(null);
-  const [modalIsOpen, setIsOpen] = useState(false);
+  // const [modalIsOpen, setIsOpen] = useState(false);
   const [listForBulk, setListForBulk] = useState([]);
   const defaultColDef = useMemo(() => ({
     sortable: false,
@@ -61,13 +61,13 @@ const BulkEditGrid = ({ test }) => {
   }));
 
   function openModal() {
-    setIsOpen(true);
+    setIsModalOpen(true);
   }
   function afterOpenModal() {
     // references are now sync'd and can be accessed.
   }
   function closeModal() {
-    setIsOpen(false);
+    setIsModalOpen(false);
     setListForBulk([]);
   }
 
@@ -273,17 +273,13 @@ const BulkEditGrid = ({ test }) => {
               )} */}
               <div>
                 <span style={{ fontWeight: 'bold' }}>
-                  {!isNull(handleCellClick)
-                    ? removeChars(
-                        handleCellClick.data[compareList.length + ' Products']
-                      )
-                    : ''}
+                  {selectedCell.value||''}
                 </span>
                 <br></br>
                 <ModalEdit
-                  onCloseModal={()=>{setIsOpen(false)}}
+                  onCloseModal={closeModal}
                   onSaveModal={handleSave}
-                  currentEvent={handleCellClick}
+                  currentEvent={selectedCell}
                   // templateJSON={template[templateType]}
                   // onValueChange={modalValueChanged}
                 />
