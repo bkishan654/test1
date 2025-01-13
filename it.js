@@ -1,24 +1,60 @@
-Below is a complete refactored version of your code to handle breadcrumbs and navigation more robustly:
+import React, { useEffect, useState } from "react";
+import productSpecTasks from "../../services/api/tasks/productSpecTasks";
+import { decryptText } from "../../services/aes";
+import { useLocation, useNavigate } from "react-router-dom";
+import Loader from "../../shared/Loader/Loader";
+import { isEmpty } from "lodash";
 
-
----
-
-Refactored Code
-
-IntelLabProductSpecs.jsx
-
-import React, { useEffect, useState } from 'react';
-import productSpecTasks from '../../services/api/tasks/productSpecTasks';
-import { decryptText } from '../../services/aes';
-import { useNavigate } from 'react-router-dom';
-import Loader from '../../shared/Loader/Loader';
+// Utility function to remove duplicates from the breadcrumb array
+const removeDuplicate = (arr) =>
+  arr.reduce((result, current) => {
+    const index = result.findIndex((item) => item[0] === current[0]);
+    if (index === -1) {
+      result.push(current);
+    }
+    return result;
+  }, []);
 
 const IntelLabProductSpecs = () => {
   const [hierData, setHierData] = useState([]);
   const [currLevelData, setCurrLevelData] = useState([]);
+  const [currLevelIndex, setCurrLevelIndex] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [breadcrumbs, setBreadcrumbs] = useState([]);
+  const [stateData, setStateData] = useState([]);
+  const [navigateData, setNavigateData] = useState(null);
+
+  const location = useLocation();
+  const state = location.state?.data || [];
   const navigate = useNavigate();
+
+  let hierarchyMappingObject = {};
+
+  const getHierarchyTree = (hierarchyData) => {
+    let hierarchyTree = {};
+    const mapping = {};
+    const formattedHierarchyData = hierarchyData.map((group) => ({
+      id: group.values[0],
+      parentId: group.values[1],
+      name: group.values[3],
+      children: [],
+      objectId: group.object.id,
+    }));
+
+    formattedHierarchyData.forEach((group) => {
+      mapping[group.id] = group;
+    });
+
+    formattedHierarchyData.forEach((group) => {
+      if (group.parentId) {
+        mapping[group.parentId]?.children.push(mapping[group.id]);
+      } else {
+        hierarchyTree = mapping[group.id];
+      }
+    });
+
+    hierarchyMappingObject = mapping;
+    return hierarchyTree;
+  };
 
   useEffect(() => {
     fetchDataFromHierarchy();
@@ -27,55 +63,86 @@ const IntelLabProductSpecs = () => {
   const fetchDataFromHierarchy = async () => {
     setLoading(true);
     const hierarchyData = await productSpecTasks.getProducts(
-      'Intel_Lab',
+      "Intel_Lab",
       process.env.REACT_APP_API_USERNAME,
       decryptText(process.env.REACT_APP_API_PASSWORD)
     );
+    const hierarchyTree = getHierarchyTree(hierarchyData.rows);
+    addLevels(hierarchyTree, 0);
 
-    const formattedData = hierarchyData.rows.map((group) => ({
-      id: group.values[0],
-      parentId: group.values[1],
-      name: group.values[3],
-      children: [],
-    }));
-
-    const tree = {};
-    const mapping = {};
-    formattedData.forEach((item) => {
-      mapping[item.id] = item;
-    });
-
-    formattedData.forEach((item) => {
-      if (item.parentId) {
-        mapping[item.parentId]?.children.push(item);
-      } else {
-        tree[item.id] = item;
-      }
-    });
-
-    setHierData(Object.values(tree));
-    setCurrLevelData(Object.values(tree));
+    setHierData(hierarchyTree);
+    setCurrLevelData(hierarchyTree.children);
     setLoading(false);
   };
 
-  const handleItemClick = (item) => {
-    const updatedBreadcrumbs = [...breadcrumbs, item];
-    setBreadcrumbs(updatedBreadcrumbs);
+  const addLevels = (node, level) => {
+    if (!node) return;
+    node.level = level;
+    node.children?.forEach((child) => addLevels(child, level + 1));
+  };
 
-    if (item.children.length > 0) {
-      setCurrLevelData(item.children);
+  useEffect(() => {
+    if (!isEmpty(state) && hierData) {
+      const breadcrumbs = removeDuplicate(state);
+      setStateData(breadcrumbs);
+
+      const lastBreadcrumb = breadcrumbs[breadcrumbs.length - 1];
+      const parentNode = findNodeById(hierData, lastBreadcrumb[1]);
+
+      if (parentNode) {
+        setCurrLevelIndex(lastBreadcrumb[2]);
+        setCurrLevelData(parentNode.children);
+      }
+    }
+  }, [state, hierData]);
+
+  const findNodeById = (node, id) => {
+    if (!node) return null;
+    if (node.id === id) return node;
+    for (let child of node.children || []) {
+      const found = findNodeById(child, id);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  const childDataHandler = (data) => {
+    const newCrumb = [data.name, data.id, data.level];
+    setStateData((prev) => removeDuplicate([...prev, newCrumb]));
+
+    if (data.level < 2) {
+      setCurrLevelData(data.children);
+      setCurrLevelIndex(data.level);
     } else {
-      // Navigate to the product list page
-      navigate(`/products/${item.name}`, { state: { breadcrumbs: updatedBreadcrumbs } });
+      const navigateData = {
+        id: data.id,
+        dataToSend: { ...data, parentName: stateData[0]?.[0] },
+      };
+      setNavigateData(navigateData);
     }
   };
 
-  const handleBreadcrumbClick = (index) => {
-    const updatedBreadcrumbs = breadcrumbs.slice(0, index + 1);
-    setBreadcrumbs(updatedBreadcrumbs);
+  useEffect(() => {
+    if (navigateData) {
+      navigate(`/products/${navigateData.id}`, {
+        state: { data: stateData, current: navigateData.dataToSend },
+      });
+    }
+  }, [navigateData, navigate, stateData]);
 
-    const parentItem = updatedBreadcrumbs[index];
-    setCurrLevelData(parentItem.children || []);
+  const renderTitle = () => {
+    const titles = ["Select your Program", "Select your Offering", "Select your Product"];
+    return <h3>{titles[currLevelIndex] || "Select an Item"}</h3>;
+  };
+
+  const backHandler = () => {
+    if (currLevelIndex > 0) {
+      setCurrLevelIndex((prev) => prev - 1);
+      const previousCrumb = stateData[stateData.length - 2];
+      const parentNode = findNodeById(hierData, previousCrumb?.[1]);
+      setCurrLevelData(parentNode?.children || []);
+      setStateData((prev) => prev.slice(0, -1));
+    }
   };
 
   return (
@@ -84,27 +151,27 @@ const IntelLabProductSpecs = () => {
         <Loader />
       ) : (
         <div className="product-container">
-          <nav className="breadcrumbs">
-            {breadcrumbs.map((crumb, index) => (
-              <span
-                key={crumb.id}
-                onClick={() => handleBreadcrumbClick(index)}
-                className="breadcrumb"
-              >
-                {crumb.name} {index < breadcrumbs.length - 1 && ' / '}
-              </span>
-            ))}
-          </nav>
-          <div className="product-list">
-            {currLevelData.map((item) => (
-              <div
-                key={item.id}
-                className="product-item"
-                onClick={() => handleItemClick(item)}
-              >
-                {item.name}
-              </div>
-            ))}
+          <div className="product-browse">
+            <span className="product-header">
+              {currLevelIndex > 0 && (
+                <i
+                  className="fa-solid fa-circle-arrow-left"
+                  onClick={backHandler}
+                ></i>
+              )}
+              {renderTitle()}
+            </span>
+            <div className="product-categories">
+              {currLevelData.map((data) => (
+                <div
+                  key={data.id}
+                  className="product-category"
+                  onClick={() => childDataHandler(data)}
+                >
+                  {data.name}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -114,119 +181,35 @@ const IntelLabProductSpecs = () => {
 
 export default IntelLabProductSpecs;
 
-
----
-
-ProductSpecifications.jsx
-
-import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import React from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import BreadCrumbs from "../../../utils/breadCrumbs";
+import CommonSearch from "../../components/CommonSearch/CommonSearch";
+import Compare from "../../components/Compare";
 
 const ProductSpecifications = () => {
   const location = useLocation();
+  const state = location.state || { data: [] };
   const navigate = useNavigate();
-  const breadcrumbs = location.state?.breadcrumbs || [];
 
-  const handleBreadcrumbClick = (index) => {
-    const updatedBreadcrumbs = breadcrumbs.slice(0, index + 1);
-
-    if (index === breadcrumbs.length - 1) {
-      navigate(`/products/${breadcrumbs[index].name}`, { state: { breadcrumbs: updatedBreadcrumbs } });
-    } else {
-      navigate(`/`, { state: { breadcrumbs: updatedBreadcrumbs } });
-    }
+  const handleBreadcrumbClick = (crumbs, index) => {
+    const newCrumbs = crumbs.slice(0, index + 1);
+    navigate("/", { state: { data: newCrumbs } });
   };
 
   return (
-    <div>
-      <nav className="breadcrumbs">
-        {breadcrumbs.map((crumb, index) => (
-          <span
-            key={crumb.id}
-            onClick={() => handleBreadcrumbClick(index)}
-            className="breadcrumb"
-          >
-            {crumb.name} {index < breadcrumbs.length - 1 && ' / '}
-          </span>
-        ))}
-      </nav>
-      <div className="product-details">
-        <h1>Product Details for {breadcrumbs[breadcrumbs.length - 1]?.name}</h1>
+    <>
+      <BreadCrumbs
+        crumbs={state.data}
+        onClick={(crumbs, index) => handleBreadcrumbClick(crumbs, index)}
+      />
+      <div className="search-container">
+        <Compare />
+        <CommonSearch />
       </div>
-    </div>
+      {/* Other component rendering logic */}
+    </>
   );
 };
 
 export default ProductSpecifications;
-
-
----
-
-Key Fixes:
-
-1. Centralized Breadcrumb Logic:
-
-Breadcrumbs are stored and propagated consistently via state.
-
-Updates to breadcrumbs are handled explicitly in handleItemClick and handleBreadcrumbClick.
-
-
-
-2. Dynamic Data Flow:
-
-Parent-child relationships are processed into a tree structure for easier traversal and rendering.
-
-
-
-3. Simplified Navigation:
-
-Navigation leverages React Router navigate with consistent state for breadcrumbs.
-
-
-
-4. Reduced Redundancy:
-
-Removed duplicate breadcrumb logic by creating a unified breadcrumb manager.
-
-
-
-
-
----
-
-Breadcrumb Example Flow:
-
-1. Homepage:
-
-User sees a list of programs.
-
-
-
-2. Program Click:
-
-Breadcrumb updates: Program.
-
-User sees a list of offerings.
-
-
-
-3. Offering Click:
-
-Breadcrumb updates: Program / Offering.
-
-User sees a list of product types.
-
-
-
-4. Product Type Click:
-
-Breadcrumb updates: Program / Offering / Product Type.
-
-User navigates to product list.
-
-
-
-
-Each breadcrumb allows navigation to previous steps by clicking. Let me know if you face any specific issues!
-
-    
