@@ -1,60 +1,74 @@
-import React, { useEffect, useState } from "react";
-import productSpecTasks from "../../services/api/tasks/productSpecTasks";
-import { decryptText } from "../../services/aes";
-import { useLocation, useNavigate } from "react-router-dom";
-import Loader from "../../shared/Loader/Loader";
-import { isEmpty } from "lodash";
+import React, { useEffect, useState } from 'react';
+import productSpecTasks from '../../services/api/tasks/productSpecTasks';
+import { decryptText } from '../../services/aes';
+import { useLocation, useNavigate } from 'react-router-dom';
+import Loader from '../../shared/Loader/Loader';
+import { isEmpty } from 'lodash';
 
-// Utility function to remove duplicates from the breadcrumb array
-const removeDuplicate = (arr) =>
-  arr.reduce((result, current) => {
+let crumbArray;
+
+const removeDuplicate = (arr) => {
+  return arr.reduce((result, current) => {
     const index = result.findIndex((item) => item[0] === current[0]);
     if (index === -1) {
       result.push(current);
     }
     return result;
   }, []);
+};
 
 const IntelLabProductSpecs = () => {
   const [hierData, setHierData] = useState([]);
   const [currLevelData, setCurrLevelData] = useState([]);
   const [currLevelIndex, setCurrLevelIndex] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [selectedProgramName, setSelectedProgramName] = useState('');
+  const [parentId, setParentId] = useState('');
   const [stateData, setStateData] = useState([]);
   const [navigateData, setNavigateData] = useState(null);
+  const [childrenData, setChildrenData] = useState([]);
 
-  const location = useLocation();
-  const state = location.state?.data || [];
+  const [heading, setHeading] = useState('Select your product');
+
+  const prop = useLocation();
+  const state = prop.state?.data;
+
   const navigate = useNavigate();
 
   let hierarchyMappingObject = {};
-
   const getHierarchyTree = (hierarchyData) => {
     let hierarchyTree = {};
-    const mapping = {};
-    const formattedHierarchyData = hierarchyData.map((group) => ({
-      id: group.values[0],
-      parentId: group.values[1],
-      name: group.values[3],
-      children: [],
-      objectId: group.object.id,
-    }));
-
-    formattedHierarchyData.forEach((group) => {
-      mapping[group.id] = group;
+    const currHierarchyMappingObject = { ...hierarchyMappingObject };
+    let formattedHierarchyData = hierarchyData?.map((group) => {
+      const formattedGroup = {
+        id: group.values[0],
+        parentId: group.values[1],
+        name: group.values[3],
+        children: [],
+        objectId: group.object.id,
+      };
+      currHierarchyMappingObject[group.values[0]] = formattedGroup;
+      return formattedGroup;
     });
 
-    formattedHierarchyData.forEach((group) => {
-      if (group.parentId) {
-        mapping[group.parentId]?.children.push(mapping[group.id]);
-      } else {
-        hierarchyTree = mapping[group.id];
-      }
+    formattedHierarchyData?.forEach((group) => {
+      if (group.parentId)
+        currHierarchyMappingObject[group.parentId]?.children.push(
+          currHierarchyMappingObject[group.id]
+        );
+      else hierarchyTree = currHierarchyMappingObject[group.id];
     });
 
-    hierarchyMappingObject = mapping;
+    hierarchyMappingObject = currHierarchyMappingObject;
+
     return hierarchyTree;
   };
+  useEffect(()=>{
+
+    let temp=state;
+    // setStateData(temp)
+
+  },[state]);
 
   useEffect(() => {
     fetchDataFromHierarchy();
@@ -63,85 +77,130 @@ const IntelLabProductSpecs = () => {
   const fetchDataFromHierarchy = async () => {
     setLoading(true);
     const hierarchyData = await productSpecTasks.getProducts(
-      "Intel_Lab",
+      'Intel_Lab',
       process.env.REACT_APP_API_USERNAME,
       decryptText(process.env.REACT_APP_API_PASSWORD)
     );
     const hierarchyTree = getHierarchyTree(hierarchyData.rows);
+    function addLevels(node, level) {
+      if (!node) return;
+      node.level = level;
+      if (node.children) {
+        node.children.forEach((child) => {
+          addLevels(child, level + 1);
+        });
+      }
+    }
     addLevels(hierarchyTree, 0);
-
     setHierData(hierarchyTree);
-    setCurrLevelData(hierarchyTree.children);
+    setCurrLevelData(hierarchyTree['children']);
     setLoading(false);
-  };
-
-  const addLevels = (node, level) => {
-    if (!node) return;
-    node.level = level;
-    node.children?.forEach((child) => addLevels(child, level + 1));
   };
 
   useEffect(() => {
     if (!isEmpty(state) && hierData) {
-      const breadcrumbs = removeDuplicate(state);
-      setStateData(breadcrumbs);
+      crumbArray = [];
+      state.forEach((value, index) => {
+        if (index < state.length) {
+          crumbArray.push(value);
+        }
+      });
 
-      const lastBreadcrumb = breadcrumbs[breadcrumbs.length - 1];
-      const parentNode = findNodeById(hierData, lastBreadcrumb[1]);
-
-      if (parentNode) {
-        setCurrLevelIndex(lastBreadcrumb[2]);
-        setCurrLevelData(parentNode.children);
+      if (state.length === 1) {
+        hierData.children?.forEach((data) => {
+          if (data.name === state[0][0]) {
+            setCurrLevelIndex(1);
+            setChildrenData(data.children);
+            setCurrLevelData(data.children);
+            setParentId(data.parentId);
+            setSelectedProgramName(data.name);
+            setStateData([state[0]]);
+          }
+        });
+      } else if (state.length === 2) {
+        hierData.children?.forEach((data) => {
+          if (data.name === state[0][0]) {
+            data.children.map((element) => {
+              if (element.id === state[1][1]) {
+                setCurrLevelIndex(2);
+                setChildrenData(element.children);
+                setCurrLevelData(element.children);
+                setParentId(element.parentId);
+                setSelectedProgramName(state[0][0]);
+                setStateData([state[0], state[1]]);
+              }
+            });
+          }
+        });
       }
     }
   }, [state, hierData]);
 
-  const findNodeById = (node, id) => {
-    if (!node) return null;
-    if (node.id === id) return node;
-    for (let child of node.children || []) {
-      const found = findNodeById(child, id);
-      if (found) return found;
-    }
-    return null;
-  };
-
-  const childDataHandler = (data) => {
-    const newCrumb = [data.name, data.id, data.level];
-    setStateData((prev) => removeDuplicate([...prev, newCrumb]));
-
-    if (data.level < 2) {
-      setCurrLevelData(data.children);
-      setCurrLevelIndex(data.level);
-    } else {
-      const navigateData = {
-        id: data.id,
-        dataToSend: { ...data, parentName: stateData[0]?.[0] },
-      };
-      setNavigateData(navigateData);
-    }
-  };
-
   useEffect(() => {
     if (navigateData) {
+      let temp = stateData;
+      temp = removeDuplicate(temp);
+      setStateData(temp);
+      console.log("final ", temp);
+
       navigate(`/products/${navigateData.id}`, {
-        state: { data: stateData, current: navigateData.dataToSend },
+        state: [navigateData.dataToSend, navigateData.currLevelData, stateData],
       });
     }
-  }, [navigateData, navigate, stateData]);
+  }, [stateData, navigateData, navigate]);
 
-  const renderTitle = () => {
-    const titles = ["Select your Program", "Select your Offering", "Select your Product"];
-    return <h3>{titles[currLevelIndex] || "Select an Item"}</h3>;
+  const childDataHandler = (data, e = null) => {
+    let obj = [];
+    obj.push(data?.name);
+    obj.push(data?.id);
+    obj.push(data?.level);
+    if (data.level === 1) {
+      setSelectedProgramName(data.name);
+    }
+    if (data.level === 1 || data.level === 2) {
+      setCurrLevelData(data.children);
+      setCurrLevelIndex(data.level);
+      setParentId(data.id);
+      addElement(obj);
+    } else {
+      addElement(obj);
+      let dataToSend = { ...data };
+      dataToSend.parentName = selectedProgramName;
+      setNavigateData({ id: data.id, dataToSend, currLevelData });
+    }
+  };
+
+  const addElement = (newElement) => {
+    const updatedStateData = [...stateData, newElement];
+    setStateData(updatedStateData);
+  };
+
+  const extractParentOfChildren = (node, result = []) => {
+    if (node.children) {
+      node.children.forEach((child) => {
+        if (child.id === parentId) {
+          setParentId(child.parentId);
+          result.push(node.children);
+        }
+        extractParentOfChildren(child, result);
+      });
+    }
+    return result.flat();
   };
 
   const backHandler = () => {
-    if (currLevelIndex > 0) {
-      setCurrLevelIndex((prev) => prev - 1);
-      const previousCrumb = stateData[stateData.length - 2];
-      const parentNode = findNodeById(hierData, previousCrumb?.[1]);
-      setCurrLevelData(parentNode?.children || []);
-      setStateData((prev) => prev.slice(0, -1));
+    setCurrLevelIndex(currLevelIndex - 1);
+    const childrenAtLevel = extractParentOfChildren(hierData);
+    setCurrLevelData(childrenAtLevel);
+  };
+
+  const renderTitle = () => {
+    if (currLevelIndex === 0) {
+      return <h3>Select your Program</h3>;
+    } else if (currLevelIndex === 1) {
+      return <h3>Select your Offering</h3>;
+    } else {
+      return <h3>Select your Product</h3>;
     }
   };
 
@@ -153,20 +212,20 @@ const IntelLabProductSpecs = () => {
         <div className="product-container">
           <div className="product-browse">
             <span className="product-header">
-              {currLevelIndex > 0 && (
+              {currLevelIndex === 1 || currLevelIndex === 2 ? (
                 <i
                   className="fa-solid fa-circle-arrow-left"
-                  onClick={backHandler}
+                  onClick={() => backHandler()}
                 ></i>
-              )}
+              ) : null}
               {renderTitle()}
             </span>
             <div className="product-categories">
               {currLevelData.map((data) => (
                 <div
-                  key={data.id}
                   className="product-category"
-                  onClick={() => childDataHandler(data)}
+                  onClick={(e) => childDataHandler(data, e)}
+                  key={data.id}
                 >
                   {data.name}
                 </div>
@@ -181,35 +240,86 @@ const IntelLabProductSpecs = () => {
 
 export default IntelLabProductSpecs;
 
-import React from "react";
+
 import { useLocation, useNavigate } from "react-router-dom";
-import BreadCrumbs from "../../../utils/breadCrumbs";
+import EditProductSpecifications from "./EditProductSpecifications";
+import NewProductSpecifications from "./NewProductSpecifications";
 import CommonSearch from "../../components/CommonSearch/CommonSearch";
 import Compare from "../../components/Compare";
+import React, { useState } from "react";
+import BreadCrumbs from "../../../utils/breadCrumbs";
+
+const removeDuplicate = (arr) => {
+  return arr.reduce((result, current) => {
+    const index = result.findIndex((item) => item[0] === current[0]);
+    if (index === -1) {
+      result.push(current);
+    }
+    return result;
+  }, []);
+};
 
 const ProductSpecifications = () => {
+  const [event, setEvent] = useState();
+  let paramSelector = new URLSearchParams(window.location.search);
+  let productID = paramSelector.get('product_id');
   const location = useLocation();
-  const state = location.state || { data: [] };
+  const state = location.state;
+  localStorage.setItem('breadcrumbs', state.data);
+
   const navigate = useNavigate();
 
-  const handleBreadcrumbClick = (crumbs, index) => {
-    const newCrumbs = crumbs.slice(0, index + 1);
-    navigate("/", { state: { data: newCrumbs } });
+  const selected = (parent, crumb, e, index) => {
+    let log = [];
+    parent.forEach((element, key) => {
+      if (key > index) {
+        return;
+      } else {
+        log.push(element);
+      }
+    });
+
+    if (log.length === 3) {
+      window.history.back();
+    }
+    console.log("state sent ",log)
+
+    navigate(`/`, { state: log, event: event, level: log.length });
   };
+
+  const breadCrumbs = location?.state?.data?.length > 0
+    ? removeDuplicate(location?.state?.data)
+    : [['', 0]];
+
+  localStorage.removeItem('breadCrumb');
+
+  const [compareList, setCompareList] = useState(() => {
+    const saved = window.localStorage.getItem('compareList');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   return (
     <>
-      <BreadCrumbs
-        crumbs={state.data}
-        onClick={(crumbs, index) => handleBreadcrumbClick(crumbs, index)}
-      />
+      <BreadCrumbs crumbs={breadCrumbs} selected={selected}></BreadCrumbs>
       <div className="search-container">
-        <Compare />
+        <Compare compareList={compareList} setCompareList={setCompareList} />
         <CommonSearch />
       </div>
-      {/* Other component rendering logic */}
+      {productID ? (
+        <EditProductSpecifications
+          productID={productID}
+          product={state?.productType}
+          parentName={state?.parentName}
+        />
+      ) : (
+        <NewProductSpecifications
+          product={state?.productType}
+          productTypeID={state?.productId}
+          parentName={state?.parentName}
+        />
+      )}
     </>
   );
-};
+}
 
 export default ProductSpecifications;
