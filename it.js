@@ -1,73 +1,102 @@
-Here’s the updated code with only the changed parts from your original implementation:
+return (
+    <Row>
+      <div class="container">
+        <table
+          style={{
+            'min-width': '100%',
+          }}
+        >
+          <tr
+            style={{
+              'text-align': 'center',
+              height: '100%',
+            }}
+          >
+            {schema.column.map((item, i) => (
+              <td style={{ 'background-color': '#f3f3f3' }}>
+                <div class="col-sm text-black" key={i}>
+                  {`${item} ${2}`}
+                </div>
+              </td>
+            ))}
+            <td>
+              <div class="col-sm bg-white text-white">ok</div>
+            </td>
+          </tr>
 
+          {dataRows.length > 0
+            ? dataRows.map((item, index) => (
+                <tr>
+                  {schema.column.map((elem, idx) => (
+                    <td>
+                      <div class="col-sm" key={idx}>
+                        {elem == 'Config' ? (
+                          <select
+                            className="form-control rounded-0"
+                            style={{ resize: 'both' }}
+                            id={'dta_' + schema.DBIdentifier + elem + index}
+                            value={`x${dataRows[index][elem]}`}
+                            onChange={(event) => {
+                              const value = parseInt(
+                                event.target.value.replace('x', ''),
+                                10
+                              );
+                              rowDataChanged(index, elem, value);
+                            }}
+                          >
+                            <option value="">Select a value</option>
+                            <option value="x4">x4</option>
+                            <option value="x8">x8</option>
+                            <option value="x16">x16</option>
+                          </select>
+                        ) : (
+                          <textarea
+                            class="form-control rounded-0 "
+                            style={{ resize: 'both' }}
+                            id={'dta_' + schema.DBIdentifier + elem + index}
+                            rows="1"
+                            value={dataRows[index][elem]}
+                            onChange={(event) => {
+                              console.log('hmm ', elem);
+                              rowDataChanged(index, elem, event.target.value);
+                            }}
+                          >
+                            {`${dataRows[index][elem]}`}
+                          </textarea>
+                        )}
+                      </div>
+                    </td>
+                  ))}
+                  <td>
+                    <div class="col-sm text-danger">
+                      <i
+                        class="fa-thin fa-solid fa-circle-xmark"
+                        style={{ 'margin-top': '40%' }}
+                        onClick={() => removeRow(index)}
+                      ></i>
+                    </div>
+                  </td>
+                  <td></td>
+                </tr>
+              ))
+            : ''}
+          <tr>
+            <div class="row col-7" style={{ 'padding-left': '2%' }}>
+              <Button
+                variant="primary"
+                onClick={(e) => {
+                  addNewRow(e);
+                }}
+                disabled={!lock}
+                value={'test'}
+              >
+                Add New Row
+              </Button>
+            </div>
+          </tr>
+        </table>
 
----
-
-1. removeDuplicateAndPreserveOrder Function
-
-This ensures the stateData maintains the same order and removes duplicates.
-
-const removeDuplicateAndPreserveOrder = (arr) => {
-  const seen = new Map();
-  return arr.filter((item) => {
-    if (seen.has(item[0])) return false;
-    seen.set(item[0], true);
-    return true;
-  });
-};
-
-
----
-
-2. childDataHandler
-
-Updated to ensure order is preserved while avoiding duplicates in stateData.
-
-const childDataHandler = (data) => {
-  const newElement = [data.name, data.id, data.level];
-
-  // Ensure order and prevent duplicates
-  const updatedStateData = removeDuplicateAndPreserveOrder([
-    ...stateData.filter((item) => item[1] !== data.id), // Remove if exists out of order
-    newElement, // Add new item
-  ]);
-
-  setStateData(updatedStateData);
-
-  if (data.level === 1) {
-    setSelectedProgramName(data.name);
-  }
-
-  if (data.children && data.children.length > 0) {
-    setCurrLevelData(data.children);
-    setCurrLevelIndex(data.level);
-    setParentId(data.id);
-  } else {
-    const dataToSend = { ...data, parentName: selectedProgramName };
-    setNavigateData({ id: data.id, dataToSend, currLevelData });
-  }
-};
-
-
----
-
-3. useEffect for Navigation
-
-Ensures the stateData order is maintained before navigating.
-
-useEffect(() => {
-  if (navigateData) {
-    const finalStateData = removeDuplicateAndPreserveOrder(stateData);
-    setStateData(finalStateData);
-
-    navigate(`/products/${navigateData.id}`, {
-      state: [navigateData.dataToSend, navigateData.currLevelData, finalStateData],
-    });
-  }
-}, [navigateData, navigate, stateData]);
-
-
----
-
-These are the only sections modified to preserve the stateData order and ensure compatibility with the rest of your code. Let me know if you need further clarifications!
-
+      </div>
+      
+    </Row>
+  );
